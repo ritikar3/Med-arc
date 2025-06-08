@@ -16,6 +16,7 @@ jobs:
       with:
         aws-access-key-id: ASIARGZHMI4D3GJ576KB
         aws-secret-access-key: VShVRYXAcb08b/TAIsH7eC58M3c/eohHG5nemuD2
+        aws-session-token: ${{ secrets.TOKEN}}
         aws-region: us-east-1
 
     - name: Validate CloudFormation Template
