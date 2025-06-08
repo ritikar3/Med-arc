@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Infrastructure setup for VPC peering, EC2 instances, and security groups.
+
+Parameters:
+  SshCidr:
+    Type: String
+    Description: CIDR block for SSH access to bastion host (e.g., your IP)
+    Default: 0.0.0.0/0
+
+Resources:
+  # VPC X
+  VPCX:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.100.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC-X
+
+  # Private Subnet for VPC X
+  VPCXSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCX
+      CidrBlock: 10.100.1.0/24
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: VPC-X-Subnet
+
+  # Public Subnet for VPC X
+  VPCXPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCX
+      CidrBlock: 10.100.2.0/24
+      AvailabilityZone: us-east-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VPC-X-Public-Subnet
+
+  # Internet Gateway
+  InternetGatewayX:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: VPC-X-IGW
+
+  GatewayAttachmentX:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPCX
+      InternetGatewayId: !Ref InternetGatewayX
+
+  # Route Tables for VPC X
+  VPCXPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCX
+      Tags:
+        - Key: Name
+          Value: VPC-X-Private-RouteTable
+
+  VPCXPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCX
+      Tags:
+        - Key: Name
+          Value: VPC-X-Public-RouteTable
+
+  PublicRouteX:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VPCXPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGatewayX
+
+  VPCXPrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VPCXSubnet
+      RouteTableId: !Ref VPCXPrivateRouteTable
+
+  VPCXPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VPCXPublicSubnet
+      RouteTableId: !Ref VPCXPublicRouteTable
+
+  # VPC Y
+  VPCY:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.200.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC-Y
+
+  VPCYSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCY
+      CidrBlock: 10.200.1.0/24
+      AvailabilityZone: us-east-1b
+      Tags:
+        - Key: Name
+          Value: VPC-Y-Subnet
+
+  VPCYRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCY
+      Tags:
+        - Key: Name
+          Value: VPC-Y-RouteTable
+
+  VPCYSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VPCYSubnet
+      RouteTableId: !Ref VPCYRouteTable
+
+  # VPC Peering
+  VPCXToYPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref VPCX
+      PeerVpcId: !Ref VPCY
+      Tags:
+        - Key: Name
+          Value: VPC-X-to-VPC-Y-Peering
+
+  VPCXPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VPCXPrivateRouteTable
+      DestinationCidrBlock: 10.200.0.0/16
+      VpcPeeringConnectionId: !Ref VPCXToYPeering
+
+  VPCYPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VPCYRouteTable
+      DestinationCidrBlock: 10.100.0.0/16
+      VpcPeeringConnectionId: !Ref VPCXToYPeering
+
+  # Security Groups
+  EICSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Instance Connect Endpoint
+      VpcId: !Ref VPCX
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.100.0.0/16
+      Tags:
+        - Key: Name
+          Value: EIC-Endpoint-SG-X
+
+  VPCXInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPCX instance SG
+      VpcId: !Ref VPCX
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.200.0.0/16
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref EICSecurityGroup
+      Tags:
+        - Key: Name
+          Value: VPC-X-SG
+
+  VPCYInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPCY instance SG
+      VpcId: !Ref VPCY
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.100.0.0/16
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref EICSecurityGroup
+      Tags:
+        - Key: Name
+          Value: VPC-Y-SG
+
+  BastionSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion host SG
+      VpcId: !Ref VPCX
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshCidr
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.100.0.0/16
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.200.0.0/16
+      Tags:
+        - Key: Name
+          Value: Bastion-SG-X
+
+Outputs:
+  VPCXSubnetId:
+    Value: !Ref VPCXSubnet
+    Export:
+      Name: med-arc-VPCXSubnetId
+  VPCXPublicSubnetId:
+    Value: !Ref VPCXPublicSubnet
+    Export:
+      Name: med-arc-VPCXPublicSubnetId
+  VPCYSubnetId:
+    Value: !Ref VPCYSubnet
+    Export:
+      Name: med-arc-VPCYSubnetId
+  VPCXInstanceSGId:
+    Value: !Ref VPCXInstanceSG
+    Export:
+      Name: med-arc-VPCXInstanceSGId
+  VPCYInstanceSGId:
+    Value: !Ref VPCYInstanceSG
+    Export:
+      Name: med-arc-VPCYInstanceSGId
+  BastionSGId:
+    Value: !Ref BastionSG
+    Export:
+      Name: med-arc-BastionSGId
