@@ -1,0 +1,32 @@
+name: Deploy CloudFormation Template
+
+on:
+  workflow_dispatch:  # Manual trigger via GitHub CLI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ASIARGZHMI4D3GJ576KB
+        aws-secret-access-key: VShVRYXAcb08b/TAIsH7eC58M3c/eohHG5nemuD2
+        aws-region: us-east-1
+
+    - name: Validate CloudFormation Template
+      run: |
+        aws cloudformation validate-template \
+          --template-body file://app.yaml
+
+    - name: Deploy CloudFormation Stack
+      run: |
+        aws cloudformation deploy \
+          --template-file app.yaml \
+          --stack-name my-cloudformation-stack \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --no-fail-on-empty-changeset
